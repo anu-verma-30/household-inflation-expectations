@@ -1,0 +1,85 @@
+# ----------------------------------------------------------------------------
+# Title: Main Analysis Pipeline
+# Description: Merges expectation data, plots inflation vs. expectations,
+#              and estimates baseline OLS regressions.
+# Author: Anu Verma
+# Last updated: 2025-04-16
+# ----------------------------------------------------------------------------
+
+# --- Install and load required packages ---
+install.packages(c("tidyverse", "zoo", "moments", "pracma", "readr",
+                   "fredr", "wesanderson", "scales", "lubridate", "broom"))
+
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(moments)
+library(pracma)
+library(zoo)
+library(readr)
+library(fredr)
+library(wesanderson)
+library(scales)
+library(lubridate)
+library(broom)
+
+# --- Load data ---
+cpi <- read_csv("data/cpi_yoy.csv")
+msurvey <- read_csv("data/Msurvey_1y_infl_exp.csv", skip = 1)
+mkt <- read_csv("data/mkt_inflation_cleaned.csv")
+moments <- read_csv("data/moments.csv")
+
+# --- Clean CPI data ---
+cpi_clean <- cpi %>%
+  mutate(date = ymd(date)) %>%
+  filter(!is.na(yoy_inflation)) %>%
+  select(date, observed_inflation = yoy_inflation)
+
+# --- Clean Michigan Survey data ---
+msurvey_clean <- msurvey %>%
+  rename_with(tolower) %>%
+  rename(median = median) %>%
+  filter(!is.na(median)) %>%
+  mutate(date = make_date(year, month, 1)) %>%
+  select(date, michigan_median = median) %>%
+  mutate(date = date + months(12))
+
+# --- Clean Market Expectations data ---
+mkt_clean <- mkt %>%
+  rename(expected_inflation = `1 year Expected Inflation`) %>%
+  mutate(date = mdy(`Model Output Date`)) %>%
+  filter(!is.na(expected_inflation)) %>%
+  mutate(expected_inflation = expected_inflation * 100) %>%
+  mutate(date = floor_date(date, "month") + months(12)) %>%
+  select(date, mkt_expectation = expected_inflation)
+
+# --- Plot comparing Actual Inflation v/s Household Expectation v/s Mkt-based expectation ---
+merged <- full_join(cpi_clean, msurvey_clean, by = "date") %>%
+  full_join(mkt_clean, by = "date") %>%
+  arrange(date)
+
+infl_comp <- ggplot(merged, aes(x = date)) +
+  geom_line(aes(y = observed_inflation, color = "Observed Inflation"), size = 0.8) +
+  geom_line(aes(y = michigan_median, color = "Median Michigan Survey Expectations"), size = 0.8) +
+  geom_line(aes(y = mkt_expectation, color = "Market-based Inflation Expectations"), size = 0.8) +
+  scale_color_manual(values = wes_palette("GrandBudapest1", 3), name = NULL) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.background = element_rect(fill = "gray95", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5, color = "black"),
+    axis.text = element_text(color = "gray20", size = 12),
+    axis.title = element_text(color = "gray20", size=12),
+    legend.position = "bottom",
+    legend.title = element_blank()
+  ) +
+  labs(
+    title = "1-Year Ahead Inflation Expectations vs. Realized Inflation",
+    x = "Year",
+    y = "Inflation Rate (%)"
+  )
+
+print(infl_comp)
+ggsave("figures/inflation_expectations_comparison.png", plot = infl_comp, width = 10, height = 6, dpi = 300)
