@@ -1,0 +1,31 @@
+install.packages(c("tidyverse", "zoo", "moments", "pracma", "readr","fredr"))
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(moments)
+library(pracma)
+library(zoo)
+library(readr)
+library(fredr)
+
+########## Observed Inflation################
+
+#CPI NSA YoY Inflation from FRED
+fredr_set_key("c838254882532c43568113f3c061748e")
+
+cpi_raw <- fredr(
+  series_id = "CPIAUCNS",
+  observation_start = as.Date("1977-01-01"),
+  frequency = "m"
+)
+# Compute Year-over-Year Inflation
+cpi_yoy <- cpi_raw %>%
+  arrange(date) %>%
+  mutate(
+    year = year(date),
+    month = month(date),
+    yoy_inflation = (value / lag(value, 12) - 1) * 100
+  ) %>%
+  select(date, year, month, value, yoy_inflation)
+
+write.csv(cpi_yoy, "data/cpi_yoy.csv", row.names = FALSE)
