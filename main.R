@@ -134,3 +134,42 @@ infl_moments_plot <- ggplot(merged_moments, aes(x = date)) +
 
 print(infl_moments_plot)
 ggsave("figures/inflation_moments.png", infl_moments_plot, width = 10, height = 6, dpi = 300)
+
+# --- Regression setup ---
+
+reg_target <- cpi_clean %>%
+  mutate(future_inflation = lead(observed_inflation, 12)) %>%
+  select(date, future_inflation)
+
+msurvey_reg <- msurvey_clean %>% mutate(date = date - months(12))
+moments_reg <- moments_clean %>% mutate(date = date - months(12))
+
+predictors <- msurvey_reg %>%
+  full_join(moments_reg %>% select(date, variance, skewness), by = "date") %>%
+  left_join(cpi_clean, by = "date") %>%
+  rename(
+    current_inflation = observed_inflation,
+    michigan_median = michigan_median
+  )
+
+reg_df <- predictors %>%
+  inner_join(reg_target, by = "date") %>%
+  filter(!is.na(future_inflation), !is.na(current_inflation),
+         !is.na(michigan_median), !is.na(variance), !is.na(skewness))
+
+# --- Baseline OLS regression ---
+ols_model <- lm(future_inflation ~ current_inflation + michigan_median + variance + skewness, data = reg_df)
+summary(ols_model)
+tidy(ols_model)
+
+# --- Reduced model with only median ---
+ols_model_reduced <- lm(future_inflation ~ current_inflation + michigan_median, data = reg_df)
+summary(ols_model_reduced)
+tidy(ols_model_reduced)
+
+# --- Subsample regression (2019-2022) ---
+reg_df_2019 <- reg_df %>%
+  filter(date >= as.Date("2019-01-01"), date <= as.Date("2022-12-01"))
+
+ols_model_2019 <- lm(future_inflation ~ current_inflation + michigan_median + variance + skewness, data = reg_df_2019)
+summary(ols_model_2019)
